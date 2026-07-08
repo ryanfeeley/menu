@@ -310,10 +310,10 @@ body[data-layout="horizontal"] .panel.panel-insert-after::after {
   box-shadow: inset 0 0 0 3px #ff4d4d;
 }
 
-.strip.drop-insert-before::before {
+.strip.drop-insert-before::before,
+.strip.drop-insert-after::after {
   content: "";
   position: absolute;
-  top: 0;
   right: 0;
   left: 0;
   z-index: 2;
@@ -321,6 +321,14 @@ body[data-layout="horizontal"] .panel.panel-insert-after::after {
   background: #ffe25a;
   box-shadow: 0 0 0 1px #050505;
   pointer-events: none;
+}
+
+.strip.drop-insert-before::before {
+  top: 0;
+}
+
+.strip.drop-insert-after::after {
+  bottom: 0;
 }
 
 .strip-text,

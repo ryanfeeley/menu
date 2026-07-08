@@ -404,7 +404,9 @@ function renderStrip(id, panelId, index, boardType) {
     : `${id} - ${boardType === "main" ? renderSpan / 2 : renderSpan} row`;
 
   strip.addEventListener("dragover", handleStripDragOver);
-  strip.addEventListener("dragleave", () => strip.classList.remove("drop-ok", "drop-no"));
+  strip.addEventListener("dragleave", () =>
+    strip.classList.remove("drop-ok", "drop-no", "drop-insert-before", "drop-insert-after")
+  );
   strip.addEventListener("drop", handleStripDrop);
 
   return strip;
@@ -636,14 +638,14 @@ function finishPointerDrop() {
 
   const source = pointerDrag.source;
   const target = pointerDrag.dropTarget;
-  if (target.type === "insert-before") {
-    moveItemBefore(source, target);
+  if (isInsertOperation(target)) {
+    insertItemAtTarget(source, target);
   } else {
     swapItems(source, target);
   }
   const moved = getItem(source.itemId).label || source.itemId;
   const targetLabel = getItem(target.itemId).label || "blank";
-  const action = target.type === "insert-before" ? "above" : "into the";
+  const action = getDropActionLabel(target);
   setStatus(`Moved ${moved} ${action} ${targetLabel} position.`);
   render();
 }
@@ -661,7 +663,7 @@ function cleanupPointerDrag() {
 function clearPointerHighlights() {
   document
     .querySelectorAll(
-      ".dragging, .drop-ok, .drop-no, .drop-insert-before, .drag-over, .panel-insert-before, .panel-insert-after"
+      ".dragging, .drop-ok, .drop-no, .drop-insert-before, .drop-insert-after, .drag-over, .panel-insert-before, .panel-insert-after"
     )
     .forEach((element) =>
       element.classList.remove(
@@ -669,6 +671,7 @@ function clearPointerHighlights() {
         "drop-ok",
         "drop-no",
         "drop-insert-before",
+        "drop-insert-after",
         "drag-over",
         "panel-insert-before",
         "panel-insert-after"
@@ -709,7 +712,7 @@ function handleStripDrop(event) {
     index: Number(target.dataset.index),
     boardType: target.dataset.boardType,
   };
-  target.classList.remove("drop-ok", "drop-no", "drop-insert-before");
+  target.classList.remove("drop-ok", "drop-no", "drop-insert-before", "drop-insert-after");
 
   const operation = getStripDropOperation(dragState, targetInfo, event.clientY, target);
   if (!operation) {
@@ -717,14 +720,14 @@ function handleStripDrop(event) {
     return;
   }
 
-  if (operation.type === "insert-before") {
-    moveItemBefore(dragState, operation);
+  if (isInsertOperation(operation)) {
+    insertItemAtTarget(dragState, operation);
   } else {
     swapItems(dragState, operation);
   }
   const moved = getItem(dragState.itemId).label || dragState.itemId;
   const targetLabel = getItem(operation.itemId).label || operation.itemId;
-  const action = operation.type === "insert-before" ? "above" : "into the";
+  const action = getDropActionLabel(operation);
   setStatus(`Moved ${moved} ${action} ${targetLabel || "blank"} position.`);
   dragState = null;
   render();
@@ -812,7 +815,7 @@ function handleDragEnd() {
   dragState = null;
   document
     .querySelectorAll(
-      ".dragging, .drop-ok, .drop-no, .drop-insert-before, .drag-over, .panel-insert-before, .panel-insert-after"
+      ".dragging, .drop-ok, .drop-no, .drop-insert-before, .drop-insert-after, .drag-over, .panel-insert-before, .panel-insert-after"
     )
     .forEach((element) =>
       element.classList.remove(
@@ -820,6 +823,7 @@ function handleDragEnd() {
         "drop-ok",
         "drop-no",
         "drop-insert-before",
+        "drop-insert-after",
         "drag-over",
         "panel-insert-before",
         "panel-insert-after"
@@ -828,10 +832,12 @@ function handleDragEnd() {
 }
 
 function getStripDropOperation(source, target, clientY, targetElement) {
-  if (isInsertZone(clientY, targetElement)) {
-    const blankIndex = findConsumableBlankIndex(source, target);
+  const insertPosition = getInsertPosition(clientY, targetElement);
+  if (insertPosition) {
+    const insertIndex = getTargetInsertIndex(target, insertPosition);
+    const blankIndex = findConsumableBlankIndex(source, target, insertIndex, insertPosition);
     if (blankIndex >= 0) {
-      return { ...target, type: "insert-before", blankIndex };
+      return { ...target, type: `insert-${insertPosition}`, blankIndex, insertIndex };
     }
   }
 
@@ -842,16 +848,45 @@ function getStripDropOperation(source, target, clientY, targetElement) {
   return null;
 }
 
-function isInsertZone(clientY, targetElement) {
+function getInsertPosition(clientY, targetElement) {
   const rect = targetElement.getBoundingClientRect();
   const threshold = Math.max(8, Math.min(14, rect.height * 0.35));
-  return clientY <= rect.top + threshold;
+  if (clientY <= rect.top + threshold) {
+    return "before";
+  }
+
+  if (clientY >= rect.bottom - threshold) {
+    return "after";
+  }
+
+  return null;
+}
+
+function getTargetInsertIndex(target, position) {
+  return position === "after" ? target.index + 1 : target.index;
 }
 
 function applyStripDropClasses(strip, operation) {
   strip.classList.toggle("drop-ok", operation?.type === "swap");
   strip.classList.toggle("drop-insert-before", operation?.type === "insert-before");
+  strip.classList.toggle("drop-insert-after", operation?.type === "insert-after");
   strip.classList.toggle("drop-no", !operation);
+}
+
+function isInsertOperation(operation) {
+  return operation?.type === "insert-before" || operation?.type === "insert-after";
+}
+
+function getDropActionLabel(operation) {
+  if (operation.type === "insert-before") {
+    return "above";
+  }
+
+  if (operation.type === "insert-after") {
+    return "below";
+  }
+
+  return "into the";
 }
 
 function canSwap(source, target) {
@@ -894,33 +929,51 @@ function canSwapAcrossBoards(sourceItem, targetItem, sourceBoardType, targetBoar
   return false;
 }
 
-function findConsumableBlankIndex(source, target) {
-  if (!canInsertBefore(source, target)) {
+function findConsumableBlankIndex(source, target, insertIndex, insertPosition) {
+  if (!canInsert(source, target, insertIndex, insertPosition)) {
     return -1;
   }
 
   const targetList = state.layout[target.panelId] || [];
-  return targetList.findIndex((itemId, index) => {
-    if (index < target.index) {
-      return false;
-    }
-
+  let blankIndex = -1;
+  let blankDistance = Number.POSITIVE_INFINITY;
+  targetList.forEach((itemId, index) => {
     if (source.panelId === target.panelId && source.index === index) {
-      return false;
+      return;
     }
 
-    return getItem(itemId).type === "blank";
+    if (getItem(itemId).type !== "blank") {
+      return;
+    }
+
+    const distance = Math.abs(index - insertIndex);
+    if (distance < blankDistance) {
+      blankIndex = index;
+      blankDistance = distance;
+    }
   });
+
+  return blankIndex;
 }
 
-function canInsertBefore(source, target) {
-  if (target.boardType !== "main" || source.panelId === target.panelId && source.index === target.index) {
+function canInsert(source, target, insertIndex, insertPosition) {
+  if (target.boardType !== "main") {
+    return false;
+  }
+
+  if (source.panelId === target.panelId && (source.index === insertIndex || source.index + 1 === insertIndex)) {
     return false;
   }
 
   const sourceItem = getItem(source.itemId);
   const targetItem = getItem(target.itemId);
-  return sourceItem.type !== "blank" && isMainOneRowSlot(sourceItem) && isMainOneRowSlot(targetItem);
+  const targetAcceptsInsert =
+    targetItem.type === "photo" ? insertPosition === "after" : targetItem.type !== "blank" && isMainOneRowSlot(targetItem);
+  return (
+    sourceItem.type !== "blank" &&
+    isMainOneRowSlot(sourceItem) &&
+    targetAcceptsInsert
+  );
 }
 
 function isLargeHeading(item) {
@@ -956,36 +1009,33 @@ function swapItems(source, target) {
   targetList[target.index] = sourceId;
 }
 
-function moveItemBefore(source, target) {
+function insertItemAtTarget(source, target) {
   const sourceList = state.layout[source.panelId];
   const targetList = state.layout[target.panelId];
   const sourceId = sourceList[source.index];
 
   if (source.panelId === target.panelId) {
-    moveItemBeforeWithinPanel(sourceList, source.index, target.index, target.blankIndex, sourceId);
+    insertItemWithinPanel(sourceList, source.index, target.insertIndex, target.blankIndex, sourceId);
     return;
   }
 
   const blankId = targetList[target.blankIndex];
   sourceList[source.index] = blankId;
   targetList.splice(target.blankIndex, 1);
-  targetList.splice(target.index, 0, sourceId);
-}
-
-function moveItemBeforeWithinPanel(list, sourceIndex, targetIndex, blankIndex, sourceId) {
-  list.splice(sourceIndex, 1);
-
-  let insertIndex = targetIndex;
-  let adjustedBlankIndex = blankIndex;
-  if (sourceIndex < insertIndex) {
+  let insertIndex = target.insertIndex;
+  if (target.blankIndex < insertIndex) {
     insertIndex -= 1;
   }
-  if (sourceIndex < adjustedBlankIndex) {
-    adjustedBlankIndex -= 1;
-  }
+  targetList.splice(insertIndex, 0, sourceId);
+}
 
-  list.splice(adjustedBlankIndex, 1);
-  if (adjustedBlankIndex < insertIndex) {
+function insertItemWithinPanel(list, sourceIndex, insertionIndex, blankIndex, sourceId) {
+  const blankId = list[blankIndex];
+  list[sourceIndex] = blankId;
+  list.splice(blankIndex, 1);
+
+  let insertIndex = insertionIndex;
+  if (blankIndex < insertIndex) {
     insertIndex -= 1;
   }
 
