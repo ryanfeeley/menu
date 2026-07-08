@@ -1120,8 +1120,8 @@ async function copyCurrentMenu() {
   const summary = buildPlainSummary();
   try {
     await navigator.clipboard.writeText(summary);
-    pulseCopyButton("Copied to clipboard");
-    setStatus("Copied current menu to clipboard.");
+    pulseCopyButton("Copied");
+    setStatus("Copied.");
   } catch {
     pulseCopyButton("Copy failed");
     setStatus("Clipboard access was blocked. Please try again from your browser.", "error");
