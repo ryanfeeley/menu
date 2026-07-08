@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Menu Reorder Recommendation</title>
+    <meta
+      name="description"
+      content="Drag and drop a fast food menu board layout, then copy the current menu recommendation to the clipboard."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Coiny&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="site-heading no-print">
+        <h1>Rearrange the items and share your dream menu</h1>
+		  <aside class="submission no-print" aria-label="Copy or reset menu recommendation">
+			<button class="secondary-button" type="button" id="resetButton">Reset</button>
+			<button class="primary-button" type="button" id="copyMenuButton">
+			  Copy current menu to clipboard
+			</button>
+		  </aside>
+      </header>
+
+      <section class="workspace" aria-label="Menu board editor">
+        <section class="board-wrap" aria-label="Fast food menu board">
+          <div class="board" id="mainBoard" aria-label="Main menu panels"></div>
+          <aside class="specials-shell" aria-label="Specials board">
+            <div class="specials-board" id="specialsBoard"></div>
+          </aside>
+        </section>
+      </section>
+
+    </main>
+
+    <template id="panelTemplate">
+      <article class="panel" draggable="false">
+        <div class="panel-meta no-print">
+          <button class="panel-handle" type="button" draggable="true" aria-label="Drag panel">
+          </button>
+          <span class="panel-title"></span>
+          <span class="panel-counter"></span>
+        </div>
+        <div class="panel-slots"></div>
+      </article>
+    </template>
+
+    <template id="stripTemplate">
+      <div class="strip" draggable="true">
+        <div class="strip-text"></div>
+        <div class="price"></div>
+        <div class="strip-meta no-print"></div>
+      </div>
+    </template>
+
+    <div hidden>
+      <input id="importInput" type="file" accept="application/json,.json" />
+      <button type="button" id="printButton"></button>
+      <div id="statusMessage" role="status" aria-live="polite"></div>
+    </div>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>
