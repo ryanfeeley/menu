@@ -1,6 +1,7 @@
 const MAIN_PANEL_HALF_ROWS = 23;
 const SPECIAL_ROWS = 5;
 const STORAGE_KEY = "squareBoyMenuStateV2";
+const LAYOUT_KEY = "squareBoyMenuLayoutV1";
 
 const initialPanelOrder = [
   "panel-1",
@@ -73,9 +74,8 @@ const initialLayout = {
     "tea",
     "milk",
     "canned_pop",
-    "unidentified_bev",
-    "ice_cream",
     "blank_6",
+    "ice_cream",
     "blank_7",
     "blank_8",
     "blank_9",
@@ -196,7 +196,6 @@ const items = {
   tea: { label: "Tea", type: "normal", span: 2, price: "$1.50" },
   milk: { label: "Milk", type: "normal", span: 2, price: "$3.70" },
   canned_pop: { label: "Canned Pop", type: "normal", span: 2, price: "$1.50" },
-  unidentified_bev: { label: "[unidentified beverage]", type: "normal", span: 2, price: "$3.90" },
   ice_cream: { label: "Ice Cream", type: "normal", span: 2, price: "$3.50" },
   blank_6: { label: "", type: "blank", span: 2 },
   blank_7: { label: "", type: "blank", span: 2 },
@@ -256,7 +255,11 @@ const panelTemplate = document.querySelector("#panelTemplate");
 const stripTemplate = document.querySelector("#stripTemplate");
 const statusMessage = document.querySelector("#statusMessage");
 const copyMenuButton = document.querySelector("#copyMenuButton");
+const copyButtonLabel = document.querySelector("#copyButtonLabel");
+const verticalLayoutButton = document.querySelector("#verticalLayoutButton");
+const horizontalLayoutButton = document.querySelector("#horizontalLayoutButton");
 
+applyLayout(loadLayoutMode());
 render();
 bindGlobalActions();
 
@@ -335,7 +338,7 @@ function renderPanel(panelId) {
   handle.addEventListener("dragend", handleDragEnd);
   panel.addEventListener("dragover", handlePanelDragOver);
   panel.addEventListener("drop", handlePanelDrop);
-  panel.addEventListener("dragleave", () => panel.classList.remove("drag-over"));
+  panel.addEventListener("dragleave", () => panel.classList.remove("panel-insert-before", "panel-insert-after"));
   panel.addEventListener("pointerdown", handlePanelPointerDown);
 
   return panel;
@@ -383,7 +386,7 @@ function renderStrip(id, panelId, index, boardType) {
     strip.classList.add("has-image");
     strip.style.setProperty("--photo-image", `url("${item.image}")`);
   }
-  if (item.locked) {
+  if (item.locked || item.type === "heading") {
     strip.draggable = false;
     strip.setAttribute("aria-disabled", "true");
   } else {
@@ -493,7 +496,9 @@ function handlePanelPointerDown(event) {
   }
 
   const clickedStrip = event.target.closest(".strip");
-  if (clickedStrip && !clickedStrip.classList.contains("photo")) {
+  const canDragPanelFromStrip =
+    clickedStrip?.classList.contains("photo") || clickedStrip?.dataset.zone === "main-heading-large";
+  if (!canDragPanelFromStrip) {
     return;
   }
 
@@ -589,8 +594,9 @@ function updatePointerDropTarget(x, y) {
       pointerDrag.dropTarget = null;
       return;
     }
-    pointerDrag.dropTarget = panel.dataset.panelId;
-    panel.classList.add("drag-over");
+    const operation = getPanelDropOperation(pointerDrag.panelId, panel.dataset.panelId, x, y, panel);
+    pointerDrag.dropTarget = operation;
+    applyPanelDropClasses(panel, operation);
     return;
   }
 
@@ -606,10 +612,9 @@ function updatePointerDropTarget(x, y) {
     index: Number(strip.dataset.index),
     boardType: strip.dataset.boardType,
   };
-  const allowed = canSwap(pointerDrag.source, target);
-  pointerDrag.dropTarget = allowed ? target : null;
-  strip.classList.toggle("drop-ok", allowed);
-  strip.classList.toggle("drop-no", !allowed);
+  const operation = getStripDropOperation(pointerDrag.source, target, y, strip);
+  pointerDrag.dropTarget = operation;
+  applyStripDropClasses(strip, operation);
 }
 
 function finishPointerDrop() {
@@ -619,7 +624,7 @@ function finishPointerDrop() {
       return;
     }
 
-    movePanelBefore(pointerDrag.panelId, pointerDrag.dropTarget);
+    movePanelToPosition(pointerDrag.panelId, pointerDrag.dropTarget);
     render();
     return;
   }
@@ -631,10 +636,15 @@ function finishPointerDrop() {
 
   const source = pointerDrag.source;
   const target = pointerDrag.dropTarget;
-  swapItems(source, target);
+  if (target.type === "insert-before") {
+    moveItemBefore(source, target);
+  } else {
+    swapItems(source, target);
+  }
   const moved = getItem(source.itemId).label || source.itemId;
   const targetLabel = getItem(target.itemId).label || "blank";
-  setStatus(`Moved ${moved} into the ${targetLabel} position.`);
+  const action = target.type === "insert-before" ? "above" : "into the";
+  setStatus(`Moved ${moved} ${action} ${targetLabel} position.`);
   render();
 }
 
@@ -650,8 +660,20 @@ function cleanupPointerDrag() {
 
 function clearPointerHighlights() {
   document
-    .querySelectorAll(".dragging, .drop-ok, .drop-no, .drag-over")
-    .forEach((element) => element.classList.remove("dragging", "drop-ok", "drop-no", "drag-over"));
+    .querySelectorAll(
+      ".dragging, .drop-ok, .drop-no, .drop-insert-before, .drag-over, .panel-insert-before, .panel-insert-after"
+    )
+    .forEach((element) =>
+      element.classList.remove(
+        "dragging",
+        "drop-ok",
+        "drop-no",
+        "drop-insert-before",
+        "drag-over",
+        "panel-insert-before",
+        "panel-insert-after"
+      )
+    );
 }
 
 function handleStripDragOver(event) {
@@ -666,11 +688,10 @@ function handleStripDragOver(event) {
     index: Number(target.dataset.index),
     boardType: target.dataset.boardType,
   };
-  const allowed = canSwap(dragState, targetInfo);
-  target.classList.toggle("drop-ok", allowed);
-  target.classList.toggle("drop-no", !allowed);
+  const operation = getStripDropOperation(dragState, targetInfo, event.clientY, target);
+  applyStripDropClasses(target, operation);
 
-  if (allowed) {
+  if (operation) {
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
   }
@@ -688,17 +709,23 @@ function handleStripDrop(event) {
     index: Number(target.dataset.index),
     boardType: target.dataset.boardType,
   };
-  target.classList.remove("drop-ok", "drop-no");
+  target.classList.remove("drop-ok", "drop-no", "drop-insert-before");
 
-  if (!canSwap(dragState, targetInfo)) {
+  const operation = getStripDropOperation(dragState, targetInfo, event.clientY, target);
+  if (!operation) {
     setStatus("That strip cannot move into this space.", "error");
     return;
   }
 
-  swapItems(dragState, targetInfo);
+  if (operation.type === "insert-before") {
+    moveItemBefore(dragState, operation);
+  } else {
+    swapItems(dragState, operation);
+  }
   const moved = getItem(dragState.itemId).label || dragState.itemId;
-  const targetLabel = getItem(targetInfo.itemId).label || targetInfo.itemId;
-  setStatus(`Moved ${moved} into the ${targetLabel || "blank"} position.`);
+  const targetLabel = getItem(operation.itemId).label || operation.itemId;
+  const action = operation.type === "insert-before" ? "above" : "into the";
+  setStatus(`Moved ${moved} ${action} ${targetLabel || "blank"} position.`);
   dragState = null;
   render();
 }
@@ -713,9 +740,12 @@ function handlePanelDragOver(event) {
     return;
   }
 
-  event.preventDefault();
-  panel.classList.add("drag-over");
-  event.dataTransfer.dropEffect = "move";
+  const operation = getPanelDropOperation(dragState.panelId, panel.dataset.panelId, event.clientX, event.clientY, panel);
+  applyPanelDropClasses(panel, operation);
+  if (operation) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }
 }
 
 function handlePanelDrop(event) {
@@ -725,35 +755,103 @@ function handlePanelDrop(event) {
 
   event.preventDefault();
   const targetPanelId = event.currentTarget.dataset.panelId;
-  document.querySelectorAll(".panel.drag-over").forEach((panel) => panel.classList.remove("drag-over"));
+  const operation = getPanelDropOperation(
+    dragState.panelId,
+    targetPanelId,
+    event.clientX,
+    event.clientY,
+    event.currentTarget
+  );
+  clearPointerHighlights();
 
-  if (!targetPanelId || targetPanelId === dragState.panelId || targetPanelId === "specials-board") {
+  if (!operation) {
     return;
   }
 
-  movePanelBefore(dragState.panelId, targetPanelId);
+  movePanelToPosition(dragState.panelId, operation);
   dragState = null;
   render();
 }
 
-function movePanelBefore(sourcePanelId, targetPanelId) {
+function getPanelDropOperation(sourcePanelId, targetPanelId, clientX, clientY, targetElement) {
+  if (!targetPanelId || targetPanelId === sourcePanelId || targetPanelId === "specials-board") {
+    return null;
+  }
+
+  const rect = targetElement.getBoundingClientRect();
+  const isHorizontal = document.body.dataset.layout === "horizontal";
+  const after = isHorizontal ? clientX > rect.left + rect.width / 2 : clientY > rect.top + rect.height / 2;
+  return { targetPanelId, position: after ? "after" : "before" };
+}
+
+function applyPanelDropClasses(panel, operation) {
+  panel.classList.toggle("panel-insert-before", operation?.position === "before");
+  panel.classList.toggle("panel-insert-after", operation?.position === "after");
+}
+
+function movePanelToPosition(sourcePanelId, operation) {
   const from = state.panelOrder.indexOf(sourcePanelId);
-  const to = state.panelOrder.indexOf(targetPanelId);
+  const to = state.panelOrder.indexOf(operation.targetPanelId);
   if (from < 0 || to < 0) {
     return;
   }
 
   const [panelId] = state.panelOrder.splice(from, 1);
-  const insertAt = from < to ? to - 1 : to;
+  let insertAt = to;
+  if (operation.position === "after") {
+    insertAt += 1;
+  }
+  if (from < insertAt) {
+    insertAt -= 1;
+  }
   state.panelOrder.splice(insertAt, 0, panelId);
-  setStatus(`${panelNames[panelId]} moved before ${panelNames[targetPanelId]}.`);
+  setStatus(`${panelNames[panelId]} moved ${operation.position} ${panelNames[operation.targetPanelId]}.`);
 }
 
 function handleDragEnd() {
   dragState = null;
   document
-    .querySelectorAll(".dragging, .drop-ok, .drop-no, .drag-over")
-    .forEach((element) => element.classList.remove("dragging", "drop-ok", "drop-no", "drag-over"));
+    .querySelectorAll(
+      ".dragging, .drop-ok, .drop-no, .drop-insert-before, .drag-over, .panel-insert-before, .panel-insert-after"
+    )
+    .forEach((element) =>
+      element.classList.remove(
+        "dragging",
+        "drop-ok",
+        "drop-no",
+        "drop-insert-before",
+        "drag-over",
+        "panel-insert-before",
+        "panel-insert-after"
+      )
+    );
+}
+
+function getStripDropOperation(source, target, clientY, targetElement) {
+  if (isInsertZone(clientY, targetElement)) {
+    const blankIndex = findConsumableBlankIndex(source, target);
+    if (blankIndex >= 0) {
+      return { ...target, type: "insert-before", blankIndex };
+    }
+  }
+
+  if (canSwap(source, target)) {
+    return { ...target, type: "swap" };
+  }
+
+  return null;
+}
+
+function isInsertZone(clientY, targetElement) {
+  const rect = targetElement.getBoundingClientRect();
+  const threshold = Math.max(8, Math.min(14, rect.height * 0.35));
+  return clientY <= rect.top + threshold;
+}
+
+function applyStripDropClasses(strip, operation) {
+  strip.classList.toggle("drop-ok", operation?.type === "swap");
+  strip.classList.toggle("drop-insert-before", operation?.type === "insert-before");
+  strip.classList.toggle("drop-no", !operation);
 }
 
 function canSwap(source, target) {
@@ -796,6 +894,35 @@ function canSwapAcrossBoards(sourceItem, targetItem, sourceBoardType, targetBoar
   return false;
 }
 
+function findConsumableBlankIndex(source, target) {
+  if (!canInsertBefore(source, target)) {
+    return -1;
+  }
+
+  const targetList = state.layout[target.panelId] || [];
+  return targetList.findIndex((itemId, index) => {
+    if (index < target.index) {
+      return false;
+    }
+
+    if (source.panelId === target.panelId && source.index === index) {
+      return false;
+    }
+
+    return getItem(itemId).type === "blank";
+  });
+}
+
+function canInsertBefore(source, target) {
+  if (target.boardType !== "main" || source.panelId === target.panelId && source.index === target.index) {
+    return false;
+  }
+
+  const sourceItem = getItem(source.itemId);
+  const targetItem = getItem(target.itemId);
+  return sourceItem.type !== "blank" && isMainOneRowSlot(sourceItem) && isMainOneRowSlot(targetItem);
+}
+
 function isLargeHeading(item) {
   return item.type === "heading";
 }
@@ -829,6 +956,42 @@ function swapItems(source, target) {
   targetList[target.index] = sourceId;
 }
 
+function moveItemBefore(source, target) {
+  const sourceList = state.layout[source.panelId];
+  const targetList = state.layout[target.panelId];
+  const sourceId = sourceList[source.index];
+
+  if (source.panelId === target.panelId) {
+    moveItemBeforeWithinPanel(sourceList, source.index, target.index, target.blankIndex, sourceId);
+    return;
+  }
+
+  const blankId = targetList[target.blankIndex];
+  sourceList[source.index] = blankId;
+  targetList.splice(target.blankIndex, 1);
+  targetList.splice(target.index, 0, sourceId);
+}
+
+function moveItemBeforeWithinPanel(list, sourceIndex, targetIndex, blankIndex, sourceId) {
+  list.splice(sourceIndex, 1);
+
+  let insertIndex = targetIndex;
+  let adjustedBlankIndex = blankIndex;
+  if (sourceIndex < insertIndex) {
+    insertIndex -= 1;
+  }
+  if (sourceIndex < adjustedBlankIndex) {
+    adjustedBlankIndex -= 1;
+  }
+
+  list.splice(adjustedBlankIndex, 1);
+  if (adjustedBlankIndex < insertIndex) {
+    insertIndex -= 1;
+  }
+
+  list.splice(insertIndex, 0, sourceId);
+}
+
 function bindGlobalActions() {
   document.querySelector("#resetButton").addEventListener("click", () => {
     state.panelOrder = [...initialPanelOrder];
@@ -841,7 +1004,21 @@ function bindGlobalActions() {
 
   document.querySelector("#printButton").addEventListener("click", () => window.print());
   copyMenuButton.addEventListener("click", copyCurrentMenu);
+  verticalLayoutButton.addEventListener("click", () => applyLayout("vertical"));
+  horizontalLayoutButton.addEventListener("click", () => applyLayout("horizontal"));
   document.querySelector("#importInput").addEventListener("change", importJson);
+}
+
+function loadLayoutMode() {
+  return localStorage.getItem(LAYOUT_KEY) === "horizontal" ? "horizontal" : "vertical";
+}
+
+function applyLayout(mode) {
+  const layoutMode = mode === "horizontal" ? "horizontal" : "vertical";
+  document.body.dataset.layout = layoutMode;
+  verticalLayoutButton.setAttribute("aria-pressed", String(layoutMode === "vertical"));
+  horizontalLayoutButton.setAttribute("aria-pressed", String(layoutMode === "horizontal"));
+  localStorage.setItem(LAYOUT_KEY, layoutMode);
 }
 
 function buildPlainSummary() {
@@ -884,10 +1061,10 @@ async function copyCurrentMenu() {
 }
 
 function pulseCopyButton(label) {
-  const defaultLabel = "Copy current menu to clipboard";
-  copyMenuButton.textContent = label;
+  const defaultLabel = "Copy";
+  copyButtonLabel.textContent = label;
   window.setTimeout(() => {
-    copyMenuButton.textContent = defaultLabel;
+    copyButtonLabel.textContent = defaultLabel;
   }, 1600);
 }
 

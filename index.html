@@ -16,13 +16,58 @@
   <body>
     <main class="app-shell">
       <header class="site-heading no-print">
-        <h1>Rearrange the items and share your dream menu</h1>
-		  <aside class="submission no-print" aria-label="Copy or reset menu recommendation">
-			<button class="secondary-button" type="button" id="resetButton">Reset</button>
-			<button class="primary-button" type="button" id="copyMenuButton">
-			  Copy current menu to clipboard
-			</button>
-		  </aside>
+        <h1>
+          <span>Rearrange the items</span>
+          <span>and share your dream menu</span>
+        </h1>
+        <div class="top-controls">
+          <div class="layout-toggle" role="group" aria-label="Choose menu layout">
+            <button
+              class="segmented-button"
+              type="button"
+              id="verticalLayoutButton"
+              aria-label="Vertical layout"
+              title="Vertical layout"
+              aria-pressed="true"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <rect x="6" y="3" width="12" height="4" rx="1.4"></rect>
+                <rect x="6" y="10" width="12" height="4" rx="1.4"></rect>
+                <rect x="6" y="17" width="12" height="4" rx="1.4"></rect>
+              </svg>
+            </button>
+            <button
+              class="segmented-button"
+              type="button"
+              id="horizontalLayoutButton"
+              aria-label="Horizontal layout"
+              title="Horizontal layout"
+              aria-pressed="false"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <rect x="3" y="6" width="4" height="12" rx="1.4"></rect>
+                <rect x="10" y="6" width="4" height="12" rx="1.4"></rect>
+                <rect x="17" y="6" width="4" height="12" rx="1.4"></rect>
+              </svg>
+            </button>
+          </div>
+          <aside class="submission no-print" aria-label="Copy or reset menu recommendation">
+            <button class="secondary-button action-button" type="button" id="resetButton">
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M4 12a8 8 0 1 0 2.35-5.65"></path>
+                <path d="M4 4v6h6"></path>
+              </svg>
+              <span>Reset</span>
+            </button>
+            <button class="primary-button action-button" type="button" id="copyMenuButton">
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+                <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
+              </svg>
+              <span id="copyButtonLabel">Copy</span>
+            </button>
+          </aside>
+        </div>
       </header>
 
       <section class="workspace" aria-label="Menu board editor">
