@@ -74,6 +74,7 @@ const initialLayout = {
     "tea",
     "milk",
     "canned_pop",
+    "blank_11",
     "blank_6",
     "ice_cream",
     "blank_7",
@@ -201,6 +202,7 @@ const items = {
   blank_7: { label: "", type: "blank", span: 2 },
   blank_8: { label: "", type: "blank", span: 2 },
   blank_9: { label: "", type: "blank", span: 2 },
+  blank_11: { label: "", type: "blank", span: 2 },
   heading_special: {
     label: "SPECIAL",
     type: "special-heading",
@@ -267,21 +269,21 @@ function loadState() {
   const stored = localStorage.getItem(STORAGE_KEY);
   const fromHash = decodeStateFromHash();
   if (fromHash) {
-    return fromHash;
+    return normalizeState(fromHash);
   }
 
   if (stored) {
     try {
       const parsed = JSON.parse(stored);
       if (isValidState(parsed)) {
-        return parsed;
+        return normalizeState(parsed);
       }
     } catch {
       localStorage.removeItem(STORAGE_KEY);
     }
   }
 
-  return getInitialState();
+  return normalizeState(getInitialState());
 }
 
 function getInitialState() {
@@ -293,6 +295,22 @@ function getInitialState() {
 
 function cloneLayout(layout) {
   return Object.fromEntries(Object.entries(layout).map(([panelId, ids]) => [panelId, [...ids]]));
+}
+
+function normalizeState(value) {
+  const next = {
+    panelOrder: [...value.panelOrder],
+    layout: cloneLayout(value.layout),
+  };
+
+  const hasBeverageBlank = Object.values(next.layout).some((ids) => ids.includes("blank_11"));
+  if (!hasBeverageBlank) {
+    const beverages = next.layout["panel-7"];
+    const cannedPopIndex = beverages.indexOf("canned_pop");
+    beverages.splice(cannedPopIndex >= 0 ? cannedPopIndex + 1 : beverages.length, 0, "blank_11");
+  }
+
+  return next;
 }
 
 function isValidState(value) {
